@@ -66,6 +66,32 @@ npm start
 
 ---
 
+## ⚡ النشر على Vercel (Vercel Serverless Deployment)
+
+تمت تهيئة المشروع ليعمل بسلاسة تامة وبنقرة واحدة على منصة Vercel:
+1. **الواجهة الأمامية (Vite SPA)** تُبنى إلى مجلد `dist`.
+2. **الخلفية (Serverless Functions)** تعمل تلقائياً عبر دوال Vercel في مجلد `/api/`:
+   - `/api/search`: جلب نتائج الويب والأخبار والجهات الرسمية.
+   - `/api/suggest`: الاقتراحات والإكمال التلقائي لحظياً.
+   - `/api/trending`: الكلمات الأكثر بحثاً في مصر.
+   - `/api/widgets`: أسعار العملات والذهب والطقس ومواقيت الصلاة.
+   - `/api/providers`: حالة محركات البحث والربط.
+3. **ملف الإعداد `vercel.json`**: يوجه مسارات `/api/*` إلى دوال Vercel Serverless ويوجه باقي المسارات إلى التطبيق دون أي تعارض أو أخطاء.
+
+### خطوات النشر على Vercel:
+1. ارفع المشروع إلى مستودع GitHub الخاص بك.
+2. في لوحة تحكم Vercel، اختر **Add New Project** وحدد مستودعك.
+3. سيتعرف Vercel تلقائياً على إعدادات Vite وملف `vercel.json`:
+   - **Framework Preset**: `Vite`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+4. (اختياري) إذا كنت تستخدم مفاتيح Google Custom Search، أضفها في **Environment Variables**:
+   - `GOOGLE_SEARCH_API_KEY`
+   - `GOOGLE_SEARCH_CX`
+5. اضغط **Deploy**؛ وسيعمل الموقع ومحرك البحث بالكامل دون رسالة "محرك البحث غير متوفر".
+
+---
+
 ## 🔑 إعداد مزودات البحث الاختيارية (API Configuration)
 
 > 💡 **ملاحظة مهمة**: محرك بحث «نايل» يعمل مباشرة بشكل كامل ومجاني بدون الحاجة لإدخال أي مفاتيح API، معتمداً على المصادر الحرة المدمجة (Google News RSS Egypt, Arabic Wikipedia, DuckDuckGo, Egyptian Directory).
