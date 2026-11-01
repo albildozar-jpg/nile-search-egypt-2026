@@ -36,7 +36,18 @@ export const SearchBox: React.FC<SearchBoxProps> = ({
     if (!trimmed) {
       // Show recent history or top Egyptian queries
       const recent = history.slice(0, 5).map((h) => h.query);
-      setSuggestions(recent);
+      if (recent.length > 0) {
+        setSuggestions(recent);
+      } else {
+        fetch('/api/suggest')
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.suggestions) {
+              setSuggestions(data.suggestions);
+            }
+          })
+          .catch(() => {});
+      }
       return;
     }
 

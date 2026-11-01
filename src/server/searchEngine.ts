@@ -86,118 +86,146 @@ export async function executeSearch(
     allResults.push(officialResult);
   }
 
-  // 2. Fetch from Google Custom Search API if user configured keys
+  // 2. Prepare parallel search tasks across providers
+  const searchTasks: Promise<void>[] = [];
+
+  // Google Custom Search API if user configured keys
   const googleApiKey = process.env.GOOGLE_SEARCH_API_KEY;
   const googleCx = process.env.GOOGLE_SEARCH_CX;
-  let googleResultsFound = false;
 
   if (googleApiKey && googleCx) {
-    try {
-      const searchTypeParam = tab === 'images' ? '&searchType=image' : '';
-      const startParam = page > 1 ? `&start=${(page - 1) * 10 + 1}` : '';
-      const googleUrl = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(
-        googleApiKey
-      )}&cx=${encodeURIComponent(googleCx)}&q=${encodeURIComponent(
-        trimmedQuery
-      )}&gl=eg&hl=ar${searchTypeParam}${startParam}`;
+    searchTasks.push(
+      (async () => {
+        try {
+          const searchTypeParam = tab === 'images' ? '&searchType=image' : '';
+          const startParam = page > 1 ? `&start=${(page - 1) * 10 + 1}` : '';
+          const googleUrl = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(
+            googleApiKey
+          )}&cx=${encodeURIComponent(googleCx)}&q=${encodeURIComponent(
+            trimmedQuery
+          )}&gl=eg&hl=ar${searchTypeParam}${startParam}`;
 
-      const res = await fetch(googleUrl, { signal: AbortSignal.timeout(6000) });
-      if (res.ok) {
-        const data = await res.json();
-        providersUsed.push('Google Custom Search API');
-        googleResultsFound = true;
+          const res = await fetch(googleUrl, { signal: AbortSignal.timeout(4000) });
+          if (res.ok) {
+            const data = await res.json();
+            providersUsed.push('Google Custom Search API');
 
-        if (data.items && Array.isArray(data.items)) {
-          for (const item of data.items) {
-            allResults.push({
-              id: `g-${item.link}`,
-              title: item.title,
-              url: item.link,
-              displayUrl: item.displayLink || item.link,
-              snippet: item.snippet || item.title,
-              source: item.displayLink || 'Google Search',
-              provider: 'google_custom',
-              thumbnail: item.pagemap?.cse_image?.[0]?.src || item.link,
-              isEgyptianOfficial: isEgyptianDomain(item.link),
-              isEgyptianMedia: isEgyptianMediaDomain(item.link),
-              category: tab,
-            });
+            if (data.items && Array.isArray(data.items)) {
+              for (const item of data.items) {
+                allResults.push({
+                  id: `g-${item.link}`,
+                  title: item.title,
+                  url: item.link,
+                  displayUrl: item.displayLink || item.link,
+                  snippet: item.snippet || item.title,
+                  source: item.displayLink || 'Google Search',
+                  provider: 'google_custom',
+                  thumbnail: item.pagemap?.cse_image?.[0]?.src || item.link,
+                  isEgyptianOfficial: isEgyptianDomain(item.link),
+                  isEgyptianMedia: isEgyptianMediaDomain(item.link),
+                  category: tab,
+                });
+              }
+            }
           }
+        } catch {
+          // Continue to free multi-engine fallback
         }
-      }
-    } catch {
-      // Continue to free multi-engine fallback
-    }
+      })()
+    );
   }
 
-  // 3. Query Google News RSS Egypt (Free Real News Engine)
+  // Google News RSS Egypt (Free Real News Engine)
   if (tab === 'all' || tab === 'news' || trimmedQuery.includes('أخبار') || trimmedQuery.includes('اليوم')) {
-    try {
-      const newsResults = await fetchGoogleNewsEgypt(trimmedQuery);
-      if (newsResults.length > 0) {
-        providersUsed.push('Google News Egypt (موجز الأخبار المصرية)');
-        allResults.push(...newsResults);
-      }
-    } catch {
-      // Ignore fallback errors
-    }
+    searchTasks.push(
+      (async () => {
+        try {
+          const newsResults = await fetchGoogleNewsEgypt(trimmedQuery);
+          if (newsResults.length > 0) {
+            providersUsed.push('Google News Egypt (موجز الأخبار المصرية)');
+            allResults.push(...newsResults);
+          }
+        } catch {
+          // Ignore fallback errors
+        }
+      })()
+    );
   }
 
-  // 4. Query Arabic Wikipedia API (Free Real Encyclopedic Engine)
-  try {
-    const wikiData = await fetchArabicWikipedia(trimmedQuery);
-    if (wikiData.results.length > 0) {
-      providersUsed.push('ويكيبيديا العربية');
-      allResults.push(...wikiData.results);
-    }
-    if (wikiData.knowledgeCard) {
-      knowledgeCard = wikiData.knowledgeCard;
-    }
-  } catch {
-    // Ignore fallback errors
+  // Arabic Wikipedia API (Free Real Encyclopedic Engine)
+  searchTasks.push(
+    (async () => {
+      try {
+        const wikiData = await fetchArabicWikipedia(trimmedQuery);
+        if (wikiData.results.length > 0) {
+          providersUsed.push('ويكيبيديا العربية');
+          allResults.push(...wikiData.results);
+        }
+        if (wikiData.knowledgeCard && !knowledgeCard) {
+          knowledgeCard = wikiData.knowledgeCard;
+        }
+      } catch {
+        // Ignore fallback errors
+      }
+    })()
+  );
+
+  // DuckDuckGo API & HTML for General Web
+  if (tab !== 'news') {
+    searchTasks.push(
+      (async () => {
+        try {
+          const ddgResults = await fetchDuckDuckGo(trimmedQuery, tab);
+          if (ddgResults.results.length > 0) {
+            providersUsed.push('DuckDuckGo Web Index');
+            allResults.push(...ddgResults.results);
+          }
+          if (!knowledgeCard && ddgResults.knowledgeCard) {
+            knowledgeCard = ddgResults.knowledgeCard;
+          }
+        } catch {
+          // Ignore fallback errors
+        }
+      })()
+    );
   }
 
-  // 5. Query DuckDuckGo API & HTML for General Web & Deep Topics
-  if (tab !== 'news' || allResults.length < 5) {
-    try {
-      const ddgResults = await fetchDuckDuckGo(trimmedQuery, tab);
-      if (ddgResults.results.length > 0) {
-        providersUsed.push('DuckDuckGo Web Index');
-        allResults.push(...ddgResults.results);
-      }
-      if (!knowledgeCard && ddgResults.knowledgeCard) {
-        knowledgeCard = ddgResults.knowledgeCard;
-      }
-    } catch {
-      // Ignore fallback errors
-    }
-  }
-
-  // 6. Handle Video Tab if tab === 'videos'
+  // Video Tab
   if (tab === 'videos') {
-    try {
-      const videoResults = await fetchVideoResults(trimmedQuery);
-      if (videoResults.length > 0) {
-        providersUsed.push('فيديوهات الويب ويوتيوب');
-        allResults.push(...videoResults);
-      }
-    } catch {
-      // Ignore
-    }
+    searchTasks.push(
+      (async () => {
+        try {
+          const videoResults = await fetchVideoResults(trimmedQuery);
+          if (videoResults.length > 0) {
+            providersUsed.push('فيديوهات الويب ويوتيوب');
+            allResults.push(...videoResults);
+          }
+        } catch {
+          // Ignore
+        }
+      })()
+    );
   }
 
-  // 7. Handle Images Tab if tab === 'images'
+  // Images Tab
   if (tab === 'images') {
-    try {
-      const imageResults = await fetchImageResults(trimmedQuery, knowledgeCard);
-      if (imageResults.length > 0) {
-        providersUsed.push('أرشيف الصور والمحتوى المرئي');
-        allResults.push(...imageResults);
-      }
-    } catch {
-      // Ignore
-    }
+    searchTasks.push(
+      (async () => {
+        try {
+          const imageResults = await fetchImageResults(trimmedQuery, knowledgeCard);
+          if (imageResults.length > 0) {
+            providersUsed.push('أرشيف الصور والمحتوى المرئي');
+            allResults.push(...imageResults);
+          }
+        } catch {
+          // Ignore
+        }
+      })()
+    );
   }
+
+  // Execute all providers concurrently
+  await Promise.allSettled(searchTasks);
 
   // 8. Deduplicate and score/rank results
   const uniqueResults = deduplicateAndRankResults(allResults, trimmedQuery, tab);
