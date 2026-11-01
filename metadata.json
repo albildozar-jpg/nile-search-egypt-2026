@@ -1,0 +1,6 @@
+{
+  "name": "نايل – Nile Egyptian Search",
+  "description": "محرك بحث مصري وعربي ذكي وسريع يقدم نتائج ويب حقيقية ومحدثة مع أولوية للمصادر المصرية الرسمية والإخبارية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
